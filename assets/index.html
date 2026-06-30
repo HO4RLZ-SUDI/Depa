@@ -1,144 +1,310 @@
 <!DOCTYPE html>
 <!-- ElderCare AI — caregiver dashboard (served by the arduino:web_ui brick at :7000).
      Polls GET /api/state every second and renders it; buttons hit the
-     /api/ack | /api/dispense | /api/med_taken endpoints exposed in dashboard.py. -->
+     /api/ack | /api/sos | /api/dispense_* | /api/med_taken | /api/enroll | /api/chat
+     endpoints exposed in dashboard.py. -->
 <html lang="th">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ElderCare AI — ระบบดูแลผู้สูงอายุ</title>
 <style>
-  :root { --bg:#0f1217; --card:#1a1f29; --line:#2a3140; --txt:#e6eaf0;
-          --muted:#8a93a6; --green:#2ecc71; --yellow:#f1c40f; --red:#e74c3c;
-          --blue:#3aa0ff; }
+  :root {
+    --bg:#0b0e14; --bg2:#0f1320; --card:#161b27; --card2:#1b2130;
+    --line:#262e3f; --line2:#323c52;
+    --txt:#e8ecf4; --muted:#8893a8; --muted2:#5d6678;
+    --green:#2ecc71; --green-d:#1f9d56;
+    --yellow:#f1c40f; --red:#e74c3c; --red-d:#c0392b;
+    --blue:#3aa0ff; --blue-d:#2680d8; --purple:#7c6cf0;
+    --shadow:0 6px 24px rgba(0,0,0,.35);
+    --radius:16px;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,"Noto Sans Thai",sans-serif;
-         background:var(--bg); color:var(--txt); }
-  header { padding:18px 22px; border-bottom:1px solid var(--line);
-           display:flex; align-items:center; gap:12px; }
-  header h1 { font-size:18px; margin:0; font-weight:600; }
-  header .who { color:var(--muted); font-size:14px; }
-  .dot { width:10px; height:10px; border-radius:50%; background:var(--muted); }
-  .wrap { max-width:920px; margin:0 auto; padding:20px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
-  .card .label { color:var(--muted); font-size:13px; margin-bottom:6px; }
-  .card .value { font-size:26px; font-weight:700; }
-  .card .unit { font-size:14px; color:var(--muted); font-weight:500; }
-  .banner { display:none; margin:0 0 16px; padding:16px 18px; border-radius:14px;
-            background:rgba(231,76,60,.15); border:1px solid var(--red);
-            color:#ff9c8f; font-weight:700; font-size:18px; }
-  .banner.on { display:block; animation:pulse 1s infinite; }
-  @keyframes pulse { 50% { opacity:.55; } }
-  .risk-bar { height:10px; border-radius:6px; background:#222a36; overflow:hidden; margin-top:10px; }
-  .risk-fill { height:100%; width:0; transition:width .4s; background:var(--green); }
-  .reasons { color:var(--muted); font-size:13px; margin-top:8px; min-height:18px; }
-  .actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
-  button { flex:1; min-width:150px; padding:14px; border:none; border-radius:12px;
-           font-size:15px; font-weight:600; cursor:pointer; color:#0b0e13; }
-  .b-ack { background:var(--green); } .b-pill { background:var(--blue); color:#fff; }
-  .b-med { background:var(--yellow); }
-  button:active { transform:translateY(1px); }
-  h2 { font-size:15px; color:var(--muted); margin:22px 0 10px; font-weight:600; }
-  .ev { display:flex; gap:10px; padding:10px 12px; border:1px solid var(--line);
-        border-radius:10px; margin-bottom:8px; background:#151a23; }
-  .ev .sev { width:6px; border-radius:4px; }
-  .ev .msg { flex:1; font-size:14px; }
-  .ev .ts { color:var(--muted); font-size:12px; white-space:nowrap; }
-  .sev-info{background:var(--blue);} .sev-warning{background:var(--yellow);} .sev-critical{background:var(--red);}
-  .foot { color:var(--muted); font-size:12px; text-align:center; margin-top:18px; }
-  .camera { display:grid; grid-template-columns:1fr; gap:14px; margin-bottom:16px; }
-  @media (min-width:680px){ .camera { grid-template-columns:2fr 1fr; } }
-  .cam-wrap { position:relative; background:#000; border:1px solid var(--line);
-              border-radius:14px; overflow:hidden; aspect-ratio:4/3; }
+  html,body { height:100%; }
+  body {
+    margin:0; color:var(--txt);
+    font-family:system-ui,"Noto Sans Thai","Segoe UI",sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(58,160,255,.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(124,108,240,.08), transparent 60%),
+      var(--bg);
+    min-height:100%;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; gap:14px;
+    padding:14px 24px;
+    background:rgba(11,14,20,.82); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .brand { display:flex; align-items:center; gap:12px; min-width:0; }
+  .logo {
+    width:40px; height:40px; flex:0 0 auto; border-radius:12px;
+    display:grid; place-items:center; font-size:20px;
+    background:linear-gradient(135deg,var(--blue),var(--purple));
+    box-shadow:0 4px 14px rgba(58,160,255,.4);
+  }
+  .brand-text h1 { font-size:17px; margin:0; font-weight:700; letter-spacing:.2px; white-space:nowrap; }
+  .brand-text .sub { font-size:12px; color:var(--muted); }
+  header .spacer { flex:1; }
+  .pill {
+    display:inline-flex; align-items:center; gap:8px;
+    padding:7px 13px; border-radius:999px; font-size:13px; font-weight:600;
+    background:var(--card); border:1px solid var(--line); color:var(--muted);
+    white-space:nowrap;
+  }
+  .who { color:var(--txt); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted2);
+         box-shadow:0 0 0 0 rgba(46,204,113,0); transition:background .3s; }
+  .dot.on { background:var(--green); animation:ping 1.8s infinite; }
+  @keyframes ping { 0%{box-shadow:0 0 0 0 rgba(46,204,113,.5);} 70%{box-shadow:0 0 0 7px rgba(46,204,113,0);} }
+  .dot.off { background:var(--red); }
+
+  /* ---------- Layout ---------- */
+  .wrap { max-width:1240px; margin:0 auto; padding:22px; }
+  .banner {
+    display:none; margin:0 0 18px; padding:16px 20px; border-radius:var(--radius);
+    background:linear-gradient(90deg,rgba(231,76,60,.22),rgba(231,76,60,.10));
+    border:1px solid var(--red); color:#ffb3a8; font-weight:800; font-size:18px;
+    align-items:center; gap:10px;
+  }
+  .banner.on { display:flex; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity:.6; } }
+
+  .columns { display:grid; grid-template-columns:1fr; gap:18px; }
+  @media (min-width:1000px){ .columns { grid-template-columns:1.7fr 1fr; align-items:start; } }
+  .col { display:flex; flex-direction:column; gap:18px; min-width:0; }
+
+  .panel {
+    background:linear-gradient(180deg,var(--card),var(--bg2));
+    border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  .panel-head {
+    display:flex; align-items:center; gap:10px;
+    padding:14px 18px; border-bottom:1px solid var(--line);
+    font-size:14px; font-weight:700; color:var(--txt);
+  }
+  .panel-head .ico { font-size:16px; }
+  .panel-head .tag { margin-left:auto; font-size:12px; font-weight:600; color:var(--muted); }
+  .panel-body { padding:18px; }
+
+  /* ---------- Camera ---------- */
+  .cam-panel { padding:0; }
+  .cam-wrap { position:relative; background:#000; aspect-ratio:16/10; }
   #cam { width:100%; height:100%; object-fit:contain; display:block; }
-  .id-badge { position:absolute; left:10px; bottom:10px; padding:6px 12px;
-              border-radius:20px; font-size:14px; font-weight:700;
-              background:rgba(0,0,0,.6); border:1px solid var(--line); }
-  .id-badge.known { background:rgba(46,204,113,.85); color:#06210f; border-color:transparent; }
-  .id-badge.unknown { background:rgba(241,196,15,.85); color:#3a2e00; border-color:transparent; }
-  .enroll { background:var(--card); border:1px solid var(--line); border-radius:14px;
-            padding:16px; display:flex; flex-direction:column; gap:10px; }
-  .enroll input { padding:11px; border-radius:10px; border:1px solid var(--line);
-                  background:#10141c; color:var(--txt); font-size:14px; }
-  .b-enroll { background:#6c5ce7; color:#fff; }
-  .b-sos { background:var(--red); color:#fff; }
-  .b-send { flex:0 0 auto; min-width:80px; background:#6c5ce7; color:#fff; }
-  .chat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
-  .chatlog { display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto; margin-bottom:10px; }
+  .cam-top { position:absolute; top:12px; left:12px; right:12px; display:flex; gap:8px; }
+  .live-chip {
+    display:inline-flex; align-items:center; gap:7px; padding:5px 11px;
+    border-radius:999px; font-size:12px; font-weight:700;
+    background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(4px);
+  }
+  .live-chip .rec { width:8px; height:8px; border-radius:50%; background:var(--red); animation:pulse 1.2s infinite; }
+  .id-badge {
+    position:absolute; left:12px; bottom:12px; padding:8px 14px;
+    border-radius:999px; font-size:14px; font-weight:700;
+    background:rgba(0,0,0,.62); border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(4px);
+  }
+  .id-badge.known   { background:rgba(46,204,113,.92); color:#06210f; border-color:transparent; }
+  .id-badge.unknown { background:rgba(241,196,15,.92); color:#3a2e00; border-color:transparent; }
+
+  /* ---------- Stat cards ---------- */
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .stat {
+    background:var(--card2); border:1px solid var(--line); border-radius:14px;
+    padding:15px 16px; transition:transform .15s, border-color .15s;
+  }
+  .stat:hover { transform:translateY(-2px); border-color:var(--line2); }
+  .stat .label { color:var(--muted); font-size:12.5px; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+  .stat .value { font-size:26px; font-weight:800; line-height:1.1; }
+  .stat .unit { font-size:14px; color:var(--muted); font-weight:600; }
+  .risk-bar { height:9px; border-radius:6px; background:#0d1119; overflow:hidden; margin-top:12px; border:1px solid var(--line); }
+  .risk-fill { height:100%; width:0; transition:width .5s, background .4s; background:var(--green); border-radius:6px; }
+  .reasons { color:var(--muted); font-size:12.5px; margin-top:9px; min-height:16px; line-height:1.5; }
+
+  /* ---------- Actions ---------- */
+  .actions { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  @media (min-width:560px){ .actions { grid-template-columns:repeat(3,1fr); } }
+  button.act {
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:15px 12px; border:none; border-radius:13px;
+    font-size:14.5px; font-weight:700; cursor:pointer; color:#0b0e13;
+    font-family:inherit; transition:transform .1s, filter .15s, box-shadow .15s;
+  }
+  button.act:hover { filter:brightness(1.07); }
+  button.act:active { transform:translateY(2px); }
+  .b-sos  { background:linear-gradient(135deg,var(--red),var(--red-d)); color:#fff;
+            grid-column:1 / -1; font-size:16px; box-shadow:0 6px 18px rgba(231,76,60,.35); }
+  .b-ack  { background:linear-gradient(135deg,var(--green),var(--green-d)); color:#06210f; }
+  .b-pill { background:linear-gradient(135deg,var(--blue),var(--blue-d)); color:#fff; }
+  .b-med  { background:linear-gradient(135deg,var(--yellow),#d4a90a); }
+
+  /* ---------- Enrollment ---------- */
+  .field { display:flex; flex-direction:column; gap:10px; }
+  .field input {
+    padding:12px 13px; border-radius:11px; border:1px solid var(--line);
+    background:#0d1119; color:var(--txt); font-size:14px; font-family:inherit; width:100%;
+  }
+  .field input:focus { outline:none; border-color:var(--blue); }
+  .b-enroll {
+    padding:13px; border:none; border-radius:11px; font-size:14.5px; font-weight:700;
+    cursor:pointer; color:#fff; font-family:inherit;
+    background:linear-gradient(135deg,var(--purple),#5a4bd6); transition:filter .15s, transform .1s;
+  }
+  .b-enroll:hover { filter:brightness(1.08); }
+  .b-enroll:active { transform:translateY(2px); }
+
+  /* ---------- Events ---------- */
+  .events { display:flex; flex-direction:column; gap:9px; max-height:340px; overflow-y:auto; }
+  .ev {
+    display:flex; gap:11px; align-items:center; padding:11px 13px;
+    border:1px solid var(--line); border-radius:11px; background:var(--card2);
+  }
+  .ev .sev { width:5px; align-self:stretch; border-radius:4px; flex:0 0 auto; }
+  .ev .msg { flex:1; font-size:13.5px; line-height:1.4; min-width:0; }
+  .ev .ts { color:var(--muted2); font-size:11.5px; white-space:nowrap; }
+  .sev-info{background:var(--blue);} .sev-warning{background:var(--yellow);} .sev-critical{background:var(--red);}
+  .empty { color:var(--muted2); font-size:13px; text-align:center; padding:18px 0; }
+
+  /* ---------- Chatbot ---------- */
+  .chatlog { display:flex; flex-direction:column; gap:9px; height:300px; overflow-y:auto; margin-bottom:12px; padding-right:4px; }
   .msg-row { display:flex; }
   .msg-row.user { justify-content:flex-end; }
-  .bubble { max-width:80%; padding:9px 13px; border-radius:14px; font-size:14px; line-height:1.4; white-space:pre-wrap; }
-  .msg-row.user .bubble { background:#3aa0ff; color:#04243f; border-bottom-right-radius:4px; }
-  .msg-row.bot .bubble { background:#222a36; color:var(--txt); border-bottom-left-radius:4px; }
-  .chatbar { display:flex; gap:8px; }
-  .chatbar input { flex:1; padding:11px; border-radius:10px; border:1px solid var(--line);
-                   background:#10141c; color:var(--txt); font-size:14px; }
+  .bubble { max-width:82%; padding:10px 14px; border-radius:15px; font-size:14px; line-height:1.45; white-space:pre-wrap; }
+  .msg-row.user .bubble { background:linear-gradient(135deg,var(--blue),var(--blue-d)); color:#04243f; border-bottom-right-radius:4px; }
+  .msg-row.bot  .bubble { background:var(--card2); border:1px solid var(--line); color:var(--txt); border-bottom-left-radius:4px; }
+  .chatbar { display:flex; gap:9px; }
+  .chatbar input {
+    flex:1; padding:12px 13px; border-radius:11px; border:1px solid var(--line);
+    background:#0d1119; color:var(--txt); font-size:14px; font-family:inherit;
+  }
+  .chatbar input:focus { outline:none; border-color:var(--blue); }
+  .b-send {
+    flex:0 0 auto; padding:0 18px; border:none; border-radius:11px; font-size:14px; font-weight:700;
+    cursor:pointer; color:#fff; font-family:inherit;
+    background:linear-gradient(135deg,var(--purple),#5a4bd6); transition:filter .15s;
+  }
+  .b-send:hover { filter:brightness(1.08); }
+
+  .foot { color:var(--muted2); font-size:12px; text-align:center; margin-top:22px; padding-bottom:8px; }
+
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb { background:var(--line2); border-radius:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
 </style>
 </head>
 <body>
 <header>
-  <span class="dot" id="live"></span>
-  <h1>🟦 ElderCare AI — ระบบดูแลผู้สูงอายุอัจฉริยะ</h1>
-  <span class="who" id="who"></span>
+  <div class="brand">
+    <div class="logo">🩺</div>
+    <div class="brand-text">
+      <h1>ElderCare AI</h1>
+      <div class="sub">ระบบดูแลผู้สูงอายุอัจฉริยะ</div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill"><span class="dot" id="live"></span><span id="liveText">กำลังเชื่อมต่อ</span></span>
+  <span class="pill who" id="who" style="display:none"></span>
 </header>
 
 <div class="wrap">
-  <div class="banner" id="banner">🚨 มีเหตุฉุกเฉิน — กรุณาตรวจสอบทันที</div>
+  <div class="banner" id="banner">🚨 <span>มีเหตุฉุกเฉิน — กรุณาตรวจสอบทันที</span></div>
 
-  <div class="camera">
-    <div class="cam-wrap">
-      <img id="cam" alt="กล้องถ่ายทอดสด">
-      <div class="id-badge" id="idBadge">กำลังเชื่อมต่อกล้อง…</div>
-    </div>
-    <div class="enroll">
-      <div class="label">ลงทะเบียนใบหน้า (Face Enrollment)</div>
-      <input id="enrollName" type="text" placeholder="ชื่อผู้สูงอายุ (เว้นว่าง = ค่าเริ่มต้น)">
-      <button class="b-enroll" onclick="enroll()">＋ บันทึกใบหน้าปัจจุบัน</button>
-      <div class="reasons" id="enrollMsg">ให้ผู้สูงอายุหันหน้าเข้ากล้อง แล้วกดบันทึก 5–10 ครั้งจากหลายมุม</div>
-    </div>
-  </div>
+  <div class="columns">
+    <!-- ===== Main column ===== -->
+    <div class="col">
+      <!-- Camera -->
+      <div class="panel cam-panel">
+        <div class="cam-wrap">
+          <img id="cam" alt="กล้องถ่ายทอดสด">
+          <div class="cam-top">
+            <span class="live-chip"><span class="rec"></span>LIVE</span>
+          </div>
+          <div class="id-badge" id="idBadge">กำลังเชื่อมต่อกล้อง…</div>
+        </div>
+      </div>
 
-  <div class="grid">
-    <div class="card">
-      <div class="label">การตรวจจับใบหน้า</div>
-      <div class="value" id="face">—</div>
-    </div>
-    <div class="card">
-      <div class="label">อุณหภูมิห้อง</div>
-      <div class="value"><span id="temp">—</span> <span class="unit">°C</span></div>
-    </div>
-    <div class="card">
-      <div class="label">ความชื้น</div>
-      <div class="value"><span id="hum">—</span> <span class="unit">%RH</span></div>
-    </div>
-    <div class="card">
-      <div class="label">คะแนนความเสี่ยง</div>
-      <div class="value"><span id="risk">0</span> <span class="unit">/100</span></div>
-      <div class="risk-bar"><div class="risk-fill" id="riskfill"></div></div>
-      <div class="reasons" id="reasons"></div>
-    </div>
-  </div>
+      <!-- Vital stats -->
+      <div class="panel">
+        <div class="panel-head"><span class="ico">📊</span>สถานะปัจจุบัน</div>
+        <div class="panel-body">
+          <div class="stats">
+            <div class="stat">
+              <div class="label">👤 การตรวจจับใบหน้า</div>
+              <div class="value" id="face" style="font-size:19px">—</div>
+            </div>
+            <div class="stat">
+              <div class="label">🌡️ อุณหภูมิห้อง</div>
+              <div class="value"><span id="temp">—</span> <span class="unit">°C</span></div>
+            </div>
+            <div class="stat">
+              <div class="label">💧 ความชื้น</div>
+              <div class="value"><span id="hum">—</span> <span class="unit">%RH</span></div>
+            </div>
+            <div class="stat">
+              <div class="label">⚠️ คะแนนความเสี่ยง</div>
+              <div class="value"><span id="risk">0</span> <span class="unit">/100</span></div>
+              <div class="risk-bar"><div class="risk-fill" id="riskfill"></div></div>
+              <div class="reasons" id="reasons"></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-  <div class="actions">
-    <button class="b-sos" onclick="action('sos')">🆘 SOS</button>
-    <button class="b-ack" onclick="action('ack')">✓ รับทราบ / หยุดสัญญาณ</button>
-    <button class="b-pill" onclick="action('dispense_a')">💊 จ่ายยา A</button>
-    <button class="b-pill" onclick="action('dispense_b')">💊 จ่ายยา B</button>
-    <button class="b-pill" onclick="action('dispense_c')">💊 จ่ายยา C</button>
-    <button class="b-med" onclick="action('med_taken')">👍 ยืนยันทานยาแล้ว</button>
-  </div>
+      <!-- Actions -->
+      <div class="panel">
+        <div class="panel-head"><span class="ico">🎛️</span>สั่งการ / ควบคุม</div>
+        <div class="panel-body">
+          <div class="actions">
+            <button class="act b-sos" onclick="action('sos')">🆘 ขอความช่วยเหลือฉุกเฉิน (SOS)</button>
+            <button class="act b-ack" onclick="action('ack')">✓ รับทราบ</button>
+            <button class="act b-med" onclick="action('med_taken')">👍 ยืนยันทานยาแล้ว</button>
+            <button class="act b-pill" onclick="action('dispense_a')">💊 จ่ายยา A</button>
+            <button class="act b-pill" onclick="action('dispense_b')">💊 จ่ายยา B</button>
+            <button class="act b-pill" onclick="action('dispense_c')">💊 จ่ายยา C</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  <h2>เหตุการณ์ล่าสุด</h2>
-  <div id="events"></div>
+    <!-- ===== Side column ===== -->
+    <div class="col">
+      <!-- Enrollment -->
+      <div class="panel">
+        <div class="panel-head"><span class="ico">🪪</span>ลงทะเบียนใบหน้า</div>
+        <div class="panel-body">
+          <div class="field">
+            <input id="enrollName" type="text" placeholder="ชื่อผู้สูงอายุ (เว้นว่าง = ค่าเริ่มต้น)">
+            <button class="b-enroll" onclick="enroll()">＋ บันทึกใบหน้าปัจจุบัน</button>
+            <div class="reasons" id="enrollMsg">ให้ผู้สูงอายุหันหน้าเข้ากล้อง แล้วกดบันทึก 5–10 ครั้งจากหลายมุม</div>
+          </div>
+        </div>
+      </div>
 
-  <h2>ผู้ช่วยอัจฉริยะ (Chatbot)</h2>
-  <div class="chat">
-    <div id="chatlog" class="chatlog"></div>
-    <div class="chatbar">
-      <input id="chatInput" type="text" placeholder="พิมพ์ถามได้เลย เช่น วันนี้อากาศเป็นยังไง"
-             onkeydown="if(event.key==='Enter') sendChat()">
-      <button class="b-send" onclick="sendChat()">ส่ง</button>
+      <!-- Events -->
+      <div class="panel">
+        <div class="panel-head"><span class="ico">🔔</span>เหตุการณ์ล่าสุด</div>
+        <div class="panel-body">
+          <div class="events" id="events"><div class="empty">ยังไม่มีเหตุการณ์</div></div>
+        </div>
+      </div>
+
+      <!-- Chatbot -->
+      <div class="panel">
+        <div class="panel-head"><span class="ico">💬</span>ผู้ช่วยอัจฉริยะ</div>
+        <div class="panel-body">
+          <div id="chatlog" class="chatlog"></div>
+          <div class="chatbar">
+            <input id="chatInput" type="text" placeholder="พิมพ์ถามได้เลย เช่น วันนี้อากาศเป็นยังไง"
+                   onkeydown="if(event.key==='Enter') sendChat()">
+            <button class="b-send" onclick="sendChat()">ส่ง</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -152,16 +318,22 @@ async function refresh() {
   try {
     const s = await (await fetch('/api/state', {cache:'no-store'})).json();
     render(s);
-    document.getElementById('live').style.background = 'var(--green)';
+    const dot = document.getElementById('live');
+    dot.classList.add('on'); dot.classList.remove('off');
+    document.getElementById('liveText').textContent = 'เชื่อมต่อแล้ว';
     document.getElementById('foot').textContent = 'อัปเดตล่าสุด: ' + (s.ts || '');
   } catch (e) {
-    document.getElementById('live').style.background = 'var(--red)';
+    const dot = document.getElementById('live');
+    dot.classList.add('off'); dot.classList.remove('on');
+    document.getElementById('liveText').textContent = 'ขาดการเชื่อมต่อ';
     document.getElementById('foot').textContent = 'ขาดการเชื่อมต่อกับอุปกรณ์…';
   }
 }
 
 function render(s) {
-  document.getElementById('who').textContent = s.person ? '· ' + s.person : '';
+  const who = document.getElementById('who');
+  if (s.person) { who.textContent = '👤 ' + s.person; who.style.display = ''; }
+  else { who.style.display = 'none'; }
   document.getElementById('face').textContent = s.face_present ? '🟢 พบใบหน้า' : '⚪ ไม่พบ';
 
   // Identity badge over the video.
@@ -191,15 +363,20 @@ function render(s) {
   document.getElementById('banner').classList.toggle('on', !!s.alarm);
 
   const box = document.getElementById('events');
+  const recent = s.recent || [];
   box.innerHTML = '';
-  (s.recent || []).forEach(ev => {
-    const row = document.createElement('div');
-    row.className = 'ev';
-    row.innerHTML = `<div class="sev sev-${ev.severity}"></div>`
-      + `<div class="msg">${escapeHtml(ev.message)}</div>`
-      + `<div class="ts">${(ev.ts||'').replace('T',' ')}</div>`;
-    box.appendChild(row);
-  });
+  if (!recent.length) {
+    box.innerHTML = '<div class="empty">ยังไม่มีเหตุการณ์</div>';
+  } else {
+    recent.forEach(ev => {
+      const row = document.createElement('div');
+      row.className = 'ev';
+      row.innerHTML = `<div class="sev sev-${ev.severity}"></div>`
+        + `<div class="msg">${escapeHtml(ev.message)}</div>`
+        + `<div class="ts">${(ev.ts||'').replace('T',' ')}</div>`;
+      box.appendChild(row);
+    });
+  }
 }
 
 function fmt(v) {
