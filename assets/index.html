@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<!-- ElderCare AI — caregiver dashboard (served by the arduino:web_ui brick at :7000).
+     Polls GET /api/state every second and renders it; buttons hit the
+     /api/ack | /api/dispense | /api/med_taken endpoints exposed in dashboard.py. -->
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElderCare AI — ระบบดูแลผู้สูงอายุ</title>
+<style>
+  :root { --bg:#0f1217; --card:#1a1f29; --line:#2a3140; --txt:#e6eaf0;
+          --muted:#8a93a6; --green:#2ecc71; --yellow:#f1c40f; --red:#e74c3c;
+          --blue:#3aa0ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,"Noto Sans Thai",sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { padding:18px 22px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .who { color:var(--muted); font-size:14px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--muted); }
+  .wrap { max-width:920px; margin:0 auto; padding:20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .card .label { color:var(--muted); font-size:13px; margin-bottom:6px; }
+  .card .value { font-size:26px; font-weight:700; }
+  .card .unit { font-size:14px; color:var(--muted); font-weight:500; }
+  .banner { display:none; margin:0 0 16px; padding:16px 18px; border-radius:14px;
+            background:rgba(231,76,60,.15); border:1px solid var(--red);
+            color:#ff9c8f; font-weight:700; font-size:18px; }
+  .banner.on { display:block; animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.55; } }
+  .risk-bar { height:10px; border-radius:6px; background:#222a36; overflow:hidden; margin-top:10px; }
+  .risk-fill { height:100%; width:0; transition:width .4s; background:var(--green); }
+  .reasons { color:var(--muted); font-size:13px; margin-top:8px; min-height:18px; }
+  .actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+  button { flex:1; min-width:150px; padding:14px; border:none; border-radius:12px;
+           font-size:15px; font-weight:600; cursor:pointer; color:#0b0e13; }
+  .b-ack { background:var(--green); } .b-pill { background:var(--blue); color:#fff; }
+  .b-med { background:var(--yellow); }
+  button:active { transform:translateY(1px); }
+  h2 { font-size:15px; color:var(--muted); margin:22px 0 10px; font-weight:600; }
+  .ev { display:flex; gap:10px; padding:10px 12px; border:1px solid var(--line);
+        border-radius:10px; margin-bottom:8px; background:#151a23; }
+  .ev .sev { width:6px; border-radius:4px; }
+  .ev .msg { flex:1; font-size:14px; }
+  .ev .ts { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .sev-info{background:var(--blue);} .sev-warning{background:var(--yellow);} .sev-critical{background:var(--red);}
+  .foot { color:var(--muted); font-size:12px; text-align:center; margin-top:18px; }
+  .camera { display:grid; grid-template-columns:1fr; gap:14px; margin-bottom:16px; }
+  @media (min-width:680px){ .camera { grid-template-columns:2fr 1fr; } }
+  .cam-wrap { position:relative; background:#000; border:1px solid var(--line);
+              border-radius:14px; overflow:hidden; aspect-ratio:4/3; }
+  #cam { width:100%; height:100%; object-fit:contain; display:block; }
+  .id-badge { position:absolute; left:10px; bottom:10px; padding:6px 12px;
+              border-radius:20px; font-size:14px; font-weight:700;
+              background:rgba(0,0,0,.6); border:1px solid var(--line); }
+  .id-badge.known { background:rgba(46,204,113,.85); color:#06210f; border-color:transparent; }
+  .id-badge.unknown { background:rgba(241,196,15,.85); color:#3a2e00; border-color:transparent; }
+  .enroll { background:var(--card); border:1px solid var(--line); border-radius:14px;
+            padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .enroll input { padding:11px; border-radius:10px; border:1px solid var(--line);
+                  background:#10141c; color:var(--txt); font-size:14px; }
+  .b-enroll { background:#6c5ce7; color:#fff; }
+  .b-sos { background:var(--red); color:#fff; }
+  .b-send { flex:0 0 auto; min-width:80px; background:#6c5ce7; color:#fff; }
+  .chat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .chatlog { display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto; margin-bottom:10px; }
+  .msg-row { display:flex; }
+  .msg-row.user { justify-content:flex-end; }
+  .bubble { max-width:80%; padding:9px 13px; border-radius:14px; font-size:14px; line-height:1.4; white-space:pre-wrap; }
+  .msg-row.user .bubble { background:#3aa0ff; color:#04243f; border-bottom-right-radius:4px; }
+  .msg-row.bot .bubble { background:#222a36; color:var(--txt); border-bottom-left-radius:4px; }
+  .chatbar { display:flex; gap:8px; }
+  .chatbar input { flex:1; padding:11px; border-radius:10px; border:1px solid var(--line);
+                   background:#10141c; color:var(--txt); font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="live"></span>
+  <h1>🟦 ElderCare AI — ระบบดูแลผู้สูงอายุอัจฉริยะ</h1>
+  <span class="who" id="who"></span>
+</header>
+
+<div class="wrap">
+  <div class="banner" id="banner">🚨 มีเหตุฉุกเฉิน — กรุณาตรวจสอบทันที</div>
+
+  <div class="camera">
+    <div class="cam-wrap">
+      <img id="cam" alt="กล้องถ่ายทอดสด">
+      <div class="id-badge" id="idBadge">กำลังเชื่อมต่อกล้อง…</div>
+    </div>
+    <div class="enroll">
+      <div class="label">ลงทะเบียนใบหน้า (Face Enrollment)</div>
+      <input id="enrollName" type="text" placeholder="ชื่อผู้สูงอายุ (เว้นว่าง = ค่าเริ่มต้น)">
+      <button class="b-enroll" onclick="enroll()">＋ บันทึกใบหน้าปัจจุบัน</button>
+      <div class="reasons" id="enrollMsg">ให้ผู้สูงอายุหันหน้าเข้ากล้อง แล้วกดบันทึก 5–10 ครั้งจากหลายมุม</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">การตรวจจับใบหน้า</div>
+      <div class="value" id="face">—</div>
+    </div>
+    <div class="card">
+      <div class="label">อุณหภูมิห้อง</div>
+      <div class="value"><span id="temp">—</span> <span class="unit">°C</span></div>
+    </div>
+    <div class="card">
+      <div class="label">ความชื้น</div>
+      <div class="value"><span id="hum">—</span> <span class="unit">%RH</span></div>
+    </div>
+    <div class="card">
+      <div class="label">คะแนนความเสี่ยง</div>
+      <div class="value"><span id="risk">0</span> <span class="unit">/100</span></div>
+      <div class="risk-bar"><div class="risk-fill" id="riskfill"></div></div>
+      <div class="reasons" id="reasons"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="b-sos" onclick="action('sos')">🆘 SOS</button>
+    <button class="b-ack" onclick="action('ack')">✓ รับทราบ / หยุดสัญญาณ</button>
+    <button class="b-pill" onclick="action('dispense_a')">💊 จ่ายยา A</button>
+    <button class="b-pill" onclick="action('dispense_b')">💊 จ่ายยา B</button>
+    <button class="b-pill" onclick="action('dispense_c')">💊 จ่ายยา C</button>
+    <button class="b-med" onclick="action('med_taken')">👍 ยืนยันทานยาแล้ว</button>
+  </div>
+
+  <h2>เหตุการณ์ล่าสุด</h2>
+  <div id="events"></div>
+
+  <h2>ผู้ช่วยอัจฉริยะ (Chatbot)</h2>
+  <div class="chat">
+    <div id="chatlog" class="chatlog"></div>
+    <div class="chatbar">
+      <input id="chatInput" type="text" placeholder="พิมพ์ถามได้เลย เช่น วันนี้อากาศเป็นยังไง"
+             onkeydown="if(event.key==='Enter') sendChat()">
+      <button class="b-send" onclick="sendChat()">ส่ง</button>
+    </div>
+  </div>
+
+  <div class="foot" id="foot">กำลังเชื่อมต่อ…</div>
+</div>
+
+<script>
+const RISK_COLORS = ["var(--green)","var(--yellow)","var(--red)"];
+
+async function refresh() {
+  try {
+    const s = await (await fetch('/api/state', {cache:'no-store'})).json();
+    render(s);
+    document.getElementById('live').style.background = 'var(--green)';
+    document.getElementById('foot').textContent = 'อัปเดตล่าสุด: ' + (s.ts || '');
+  } catch (e) {
+    document.getElementById('live').style.background = 'var(--red)';
+    document.getElementById('foot').textContent = 'ขาดการเชื่อมต่อกับอุปกรณ์…';
+  }
+}
+
+function render(s) {
+  document.getElementById('who').textContent = s.person ? '· ' + s.person : '';
+  document.getElementById('face').textContent = s.face_present ? '🟢 พบใบหน้า' : '⚪ ไม่พบ';
+
+  // Identity badge over the video.
+  const badge = document.getElementById('idBadge');
+  badge.classList.remove('known', 'unknown');
+  if (!s.face_present) {
+    badge.textContent = 'ไม่พบใบหน้า';
+  } else if (s.identity_known && s.identity) {
+    badge.textContent = '✓ ' + s.identity;
+    badge.classList.add('known');
+  } else if (s.recognition_on === false) {
+    badge.textContent = 'พบใบหน้า (ปิดการระบุตัวตน)';
+  } else {
+    badge.textContent = 'ไม่รู้จัก — ยังไม่ลงทะเบียน';
+    badge.classList.add('unknown');
+  }
+  document.getElementById('temp').textContent = fmt(s.temp_c);
+  document.getElementById('hum').textContent  = fmt(s.humidity);
+
+  const score = s.risk_score || 0, level = s.risk_level || 0;
+  document.getElementById('risk').textContent = score;
+  const fill = document.getElementById('riskfill');
+  fill.style.width = score + '%';
+  fill.style.background = RISK_COLORS[level] || RISK_COLORS[0];
+  document.getElementById('reasons').textContent = (s.reasons || []).join(' · ');
+
+  document.getElementById('banner').classList.toggle('on', !!s.alarm);
+
+  const box = document.getElementById('events');
+  box.innerHTML = '';
+  (s.recent || []).forEach(ev => {
+    const row = document.createElement('div');
+    row.className = 'ev';
+    row.innerHTML = `<div class="sev sev-${ev.severity}"></div>`
+      + `<div class="msg">${escapeHtml(ev.message)}</div>`
+      + `<div class="ts">${(ev.ts||'').replace('T',' ')}</div>`;
+    box.appendChild(row);
+  });
+}
+
+function fmt(v) {
+  if (v === undefined || v === null || v === -127 || v === -1) return '—';
+  return Number(v).toFixed(1);
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+function action(name) {
+  fetch('/api/' + name, {cache:'no-store'}).then(refresh).catch(()=>{});
+}
+
+function enroll() {
+  const name = document.getElementById('enrollName').value.trim();
+  const q = name ? ('?name=' + encodeURIComponent(name)) : '';
+  fetch('/api/enroll' + q, {cache:'no-store'})
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('enrollMsg').textContent =
+        `บันทึกใบหน้า "${d.name}" แล้ว — ทั้งหมด ${d.samples} รูป (กดเพิ่มได้อีกเพื่อความแม่นยำ)`;
+    })
+    .catch(() => {
+      document.getElementById('enrollMsg').textContent = 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง';
+    });
+}
+
+// --- chatbot ---
+function addBubble(text, who) {
+  const row = document.createElement('div');
+  row.className = 'msg-row ' + who;
+  const b = document.createElement('div');
+  b.className = 'bubble';
+  b.textContent = text;
+  row.appendChild(b);
+  const log = document.getElementById('chatlog');
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  return b;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addBubble(text, 'user');
+  const thinking = addBubble('…', 'bot');
+  try {
+    const d = await (await fetch('/api/chat?q=' + encodeURIComponent(text), {cache:'no-store'})).json();
+    thinking.textContent = d.reply || '(ไม่มีคำตอบ)';
+  } catch (e) {
+    thinking.textContent = 'ขออภัยค่ะ เชื่อมต่อผู้ช่วยไม่ได้';
+  }
+  document.getElementById('chatlog').scrollTop = 1e9;
+}
+
+// Live video: MJPEG stream (one connection, high fps). Falls back to base64
+// frame polling only if the stream fails to load.
+let polling = false;
+async function frameLoop() {
+  try {
+    const d = await (await fetch('/api/frame', {cache:'no-store'})).json();
+    if (d.jpg) document.getElementById('cam').src = d.jpg;
+  } catch (e) { /* keep last frame */ }
+  setTimeout(frameLoop, 80);
+}
+function startVideo() {
+  const cam = document.getElementById('cam');
+  cam.onerror = () => { if (!polling) { polling = true; frameLoop(); } };
+  cam.src = '/video';   // MJPEG multipart stream
+}
+
+refresh();
+setInterval(refresh, 1000);
+startVideo();
+</script>
+</body>
+</html>

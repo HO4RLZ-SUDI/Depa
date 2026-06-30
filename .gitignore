@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Arduino / App Lab build artifacts
+build/
+*.elf
+*.bin
+*.hex
+
+# Local runtime data (privacy: never commit personal data)
+python/faces/        # enrolled face images
+*.sqlite3            # local care database
+
+# Editor / OS
+.DS_Store
+*.swp

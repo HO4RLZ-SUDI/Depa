@@ -1,0 +1,8 @@
+name: ElderCare AI
+icon: 🟦
+description: ระบบดูแลผู้สูงอายุอัจฉริยะ (AIoT) — ตรวจจับการล้ม, เซนเซอร์, แจ้งเตือนผู้ดูแล บน Arduino UNO Q
+
+# App Lab "Bricks" (managed services, usually Docker containers on the Linux side).
+# The caregiver dashboard is served by the web_ui brick.
+bricks:
+  - arduino:web_ui
